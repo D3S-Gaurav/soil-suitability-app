@@ -10,6 +10,7 @@ function App() {
   const [error, setError] = useState(null);
   const [lastUpdated, setLastUpdated] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [recommendationToggle, setRecommendationToggle] = useState(false);
 
   useEffect(() => {
     // Fetch crops on mount
@@ -27,6 +28,17 @@ function App() {
         setError("Could not connect to backend API.");
       });
   }, []);
+
+  const handleRecommendationToggle = (e) => {
+    const isChecked = e.target.checked;
+    setRecommendationToggle(isChecked);
+    
+    if (isChecked) {
+      window.open('https://crop-recommendation-dashboard.example.com', '_blank');
+      // Reset the toggle after a short delay so it doesn't stay 'on'
+      setTimeout(() => setRecommendationToggle(false), 500);
+    }
+  };
 
   const fetchEvaluation = () => {
     if (!selectedCrop) return;
@@ -61,8 +73,23 @@ function App() {
     <>
       <header className="app-header">
         <div className="live-dot" title="Live WebSocket Connection Active"></div>
-        <h1 className="app-title">SoilSense</h1>
-        <span className="app-subtitle">Real-Time Soil Suitability</span>
+        <div className="header-content">
+          <h1 className="app-title">SoilSense</h1>
+          <span className="app-subtitle">Real-Time Soil Suitability</span>
+        </div>
+        <div className="header-actions">
+          <div className="toggle-container">
+            <span className="toggle-text">Crop Recommendations</span>
+            <label className="toggle-switch">
+              <input 
+                type="checkbox" 
+                checked={recommendationToggle}
+                onChange={handleRecommendationToggle} 
+              />
+              <span className="slider round"></span>
+            </label>
+          </div>
+        </div>
       </header>
 
       <main className="main-content">
