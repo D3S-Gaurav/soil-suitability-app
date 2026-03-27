@@ -1,8 +1,7 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import './index.css';
 
 const API_HTTP = "http://localhost:8000";
-const API_WS = "ws://localhost:8000/ws";
 
 function App() {
   const [crops, setCrops] = useState([]);
@@ -10,8 +9,7 @@ function App() {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [lastUpdated, setLastUpdated] = useState(null);
-  
-  const wsRef = useRef(null);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     // Fetch crops on mount
@@ -30,50 +28,29 @@ function App() {
       });
   }, []);
 
-  useEffect(() => {
+  const fetchEvaluation = () => {
     if (!selectedCrop) return;
+    setLoading(true);
+    setError(null);
 
-    const connectWS = () => {
-      if (wsRef.current) wsRef.current.close();
-      
-      const ws = new WebSocket(`${API_WS}/${selectedCrop}`);
-      
-      ws.onopen = () => {
-        setError(null);
-      };
-
-      ws.onmessage = (event) => {
-        const payload = JSON.parse(event.data);
+    fetch(`${API_HTTP}/evaluate/${selectedCrop}`)
+      .then(res => res.json())
+      .then(payload => {
         if (payload.error) {
           setError(payload.error);
         } else {
           setData(payload);
-          setError(null);
           setLastUpdated(new Date().toLocaleTimeString());
         }
-      };
-
-      ws.onerror = () => {
-        // Handled via onclose reconnect
-      };
-
-      ws.onclose = () => {
-        // Try to reconnect in 2s
-        setTimeout(connectWS, 2000);
-      };
-
-      wsRef.current = ws;
-    };
-
-    connectWS();
-
-    return () => {
-      if (wsRef.current) {
-        wsRef.current.onclose = null;
-        wsRef.current.close();
-      }
-    };
-  }, [selectedCrop]);
+      })
+      .catch(err => {
+        console.error("Failed to fetch evaluation", err);
+        setError("Failed to fetch data from the sensor.");
+      })
+      .finally(() => {
+        setLoading(false);
+      });
+  };
 
   const handleCropChange = (e) => {
     setSelectedCrop(e.target.value);
@@ -89,7 +66,7 @@ function App() {
       </header>
 
       <main className="main-content">
-        <div className="controls">
+        <div className="controls" style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
           <label htmlFor="cropSelect">Target Crop Profile:</label>
           <select 
             id="cropSelect" 
@@ -104,6 +81,25 @@ function App() {
               </option>
             ))}
           </select>
+          <button 
+            onClick={fetchEvaluation} 
+            disabled={crops.length === 0 || loading}
+            style={{
+              padding: '0.75rem 1.5rem',
+              backgroundColor: 'var(--accent)',
+              color: 'var(--bg)',
+              border: 'none',
+              borderRadius: '8px',
+              fontFamily: 'inherit',
+              fontWeight: '600',
+              fontSize: '1rem',
+              cursor: loading ? 'not-allowed' : 'pointer',
+              opacity: loading ? 0.7 : 1,
+              transition: 'background-color 0.2s',
+            }}
+          >
+            {loading ? 'Fetching...' : 'Fetch Live Data'}
+          </button>
         </div>
 
         {error ? (
@@ -114,8 +110,13 @@ function App() {
               Make sure the FastAPI backend is running on http://localhost:8000
             </p>
           </div>
-        ) : !data ? (
+        ) : loading ? (
           <div className="spinner"></div>
+        ) : !data ? (
+          <div className="card" style={{ textAlign: 'center', padding: '3rem 2rem' }}>
+            <h2 style={{ justifyContent: 'center', marginBottom: '1rem' }}>Ready to Evaluate</h2>
+            <p style={{ color: 'var(--muted)' }}>Select a crop and click "Fetch Live Data" to read from the field sensors.</p>
+          </div>
         ) : (
           <div className="dashboard-grid">
             
@@ -199,9 +200,9 @@ function App() {
           </div>
         )}
 
-        {lastUpdated && (
+        {lastUpdated && data && (
           <div className="footer-info">
-            Live Field Data Feed &bull; Last updated at {lastUpdated}
+            Live Field Data Feed &bull; Last fetched at {lastUpdated}
           </div>
         )}
       </main>

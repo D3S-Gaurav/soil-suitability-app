@@ -1,6 +1,5 @@
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-import asyncio
 import json
 import threading
 
@@ -44,18 +43,3 @@ def evaluate(crop_name: str):
 @app.get("/evaluate_all")
 def evaluate_all():
     return {"suitable_crops": evaluate_all_crops(latest_sensor_data)}
-
-
-@app.websocket("/ws/{crop_name}")
-async def websocket_endpoint(websocket: WebSocket, crop_name: str):
-    """
-    Real-time WebSocket: pushes updated soil evaluation every 3 seconds.
-    """
-    await websocket.accept()
-    try:
-        while True:
-            result = evaluate_soil(latest_sensor_data, crop_name)
-            await websocket.send_text(json.dumps(result))
-            await asyncio.sleep(3)
-    except WebSocketDisconnect:
-        print(f"Client disconnected from /ws/{crop_name}")
