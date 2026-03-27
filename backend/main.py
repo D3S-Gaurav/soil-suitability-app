@@ -5,7 +5,7 @@ import json
 import threading
 
 from sensor_reader import read_sensor_data
-from soil_engine import evaluate_soil
+from soil_engine import evaluate_soil, evaluate_all_crops
 from dataset_loader import load_crop_data, list_all_crops
 
 app = FastAPI(title="Soil Suitability API")
@@ -40,6 +40,11 @@ def get_sensor():
 @app.get("/evaluate/{crop_name}")
 def evaluate(crop_name: str):
     return evaluate_soil(latest_sensor_data, crop_name)
+
+@app.get("/evaluate_all")
+def evaluate_all():
+    return {"suitable_crops": evaluate_all_crops(latest_sensor_data)}
+
 
 @app.websocket("/ws/{crop_name}")
 async def websocket_endpoint(websocket: WebSocket, crop_name: str):

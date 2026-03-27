@@ -1,4 +1,4 @@
-from dataset_loader import get_crop_requirements, load_crop_data
+from dataset_loader import get_crop_requirements, load_crop_data, list_all_crops
 
 # Organic fertilizer lookup table (from the paper — Table I)
 ORGANIC_FERTILIZERS = {
@@ -14,8 +14,9 @@ ORGANIC_FERTILIZERS = {
 
 TOLERANCE = 0.10  # 10% tolerance buffer
 
-def evaluate_soil(sensor_data: dict, crop_name: str) -> dict:
-    df = load_crop_data()
+def evaluate_soil(sensor_data: dict, crop_name: str, df=None) -> dict:
+    if df is None:
+        df = load_crop_data()
     requirements = get_crop_requirements(crop_name, df)
 
     if not requirements:
@@ -82,3 +83,12 @@ def evaluate_soil(sensor_data: dict, crop_name: str) -> dict:
         "params": params,
         "sensor_raw": sensor_data
     }
+
+def evaluate_all_crops(sensor_data: dict) -> list:
+    df = load_crop_data()
+    suitable_crops = []
+    for crop in list_all_crops(df):
+        res = evaluate_soil(sensor_data, crop, df)
+        if res.get("suitable"):
+            suitable_crops.append(crop)
+    return sorted(suitable_crops)
