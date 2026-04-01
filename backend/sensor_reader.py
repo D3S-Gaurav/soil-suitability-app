@@ -2,24 +2,9 @@ import serial
 import json
 import time
 import random  # remove in production
-import requests
 
 SERIAL_PORT = "COM3"       # Windows: "COM3", Linux/Mac: "/dev/ttyUSB0"
 BAUD_RATE = 9600
-
-def read_sensor_from_ip(ip: str):
-    """
-    Fetches JSON data from the sensor over HTTP.
-    Example sensor output: {"N": 85, "P": 42, "K": 43, "pH": 6.5, "moisture": 38}
-    """
-    try:
-        url = f"http://{ip}/"
-        response = requests.get(url, timeout=3)
-        response.raise_for_status()
-        return response.json()
-    except Exception as e:
-        print(f"Error reading from IP {ip}: {e}")
-        return None
 
 def read_sensor_data():
     """
