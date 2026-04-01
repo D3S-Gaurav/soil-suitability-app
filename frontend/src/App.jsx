@@ -13,9 +13,49 @@ function App() {
   const [recommendationToggle, setRecommendationToggle] = useState(false);
   const [sensorIP, setSensorIP] = useState('');
   const [connectionStatus, setConnectionStatus] = useState(null);
+  const [liveMode, setLiveMode] = useState(false);
 
   const [aiAnalysis, setAiAnalysis] = useState(null);
   const [aiLoading, setAiLoading] = useState(false);
+
+  useEffect(() => {
+    let interval = null;
+    if (liveMode) {
+      interval = setInterval(() => {
+        fetch(`${API_HTTP}/sensor`)
+          .then(res => res.json())
+          .then(res => {
+             // In live mode, we only want to update the data state if evaluations are already done
+             // or just update raw data for the readings card
+             if (data) {
+                // If we already have an evaluation, update just the current values
+                // This keeps the suitability and recommendations intact while showing live values
+                setData(prev => {
+                   if (!prev) return prev;
+                   const updatedParams = { ...prev.params };
+                   ['N', 'P', 'K', 'pH'].forEach(p => {
+                      if (res[p] !== undefined) updatedParams[p] = { ...updatedParams[p], value: res[p] };
+                   });
+                   return { ...prev, params: updatedParams, sensor_raw: res };
+                });
+             } else {
+                // If no evaluation yet, just update sensor_raw for the live readings card
+                setData(prev => ({ 
+                   crop: prev?.crop || '', 
+                   params: prev?.params || {},
+                   sensor_raw: res,
+                   suitable: prev?.suitable || false,
+                   verdict: prev?.verdict || ''
+                }));
+             }
+          })
+          .catch(err => console.error("Live fetch error", err));
+      }, 500); // 500ms for a balance of real-time feel and stability
+    } else {
+      clearInterval(interval);
+    }
+    return () => clearInterval(interval);
+  }, [liveMode, data]);
 
   useEffect(() => {
     // Fetch crops on mount
@@ -212,6 +252,18 @@ function App() {
                <span className="slider round"></span>
              </label>
            </div>
+           
+           <div className="toggle-container" style={{ borderColor: liveMode ? 'var(--accent)' : 'var(--border)' }}>
+             <span className="toggle-text" style={{ color: liveMode ? 'var(--accent)' : 'var(--muted)' }}>📡 Live Polling</span>
+             <label className="toggle-switch">
+               <input 
+                 type="checkbox" 
+                 checked={liveMode}
+                 onChange={(e) => setLiveMode(e.target.checked)} 
+               />
+               <span className="slider round"></span>
+             </label>
+           </div>
          </div>
       </header>
 
@@ -390,19 +442,84 @@ function App() {
             {/* Sensor Readings Card */}
             <div className="card">
                <h2>📡 Live Sensor Readings</h2>
-               {['N', 'P', 'K', 'pH'].map(param => (
-                 <div className="data-row" key={param}>
-                    <span className="data-label">
-                      {param === 'pH' ? 'pH Level' : `${param} (mg/kg)`}
-                    </span>
-                    <div className="data-value">
-                      {data.params[param]?.value}
-                      <span className={`badge status-${data.params[param]?.status}`}>
-                        {data.params[param]?.status}
-                      </span>
+                {/* Soil Nutrients (NPK/pH) */}
+                {['N', 'P', 'K', 'pH'].map(param => (
+                  <div className="data-row" key={param}>
+                     <span className="data-label">
+                       {param === 'pH' ? 'pH Level' : `${param} (mg/kg)`}
+                     </span>
+                     <div className="data-value">
+                       {data.params[param]?.value}
+                       <span className={`badge status-${data.params[param]?.status}`}>
+                         {data.params[param]?.status}
+                       </span>
+                     </div>
+                  </div>
+                ))}
+
+                {/* Environmental Conditions (DHT22, Rain, etc) */}
+                {data.sensor_raw?.dht22 && (
+                  <>
+                    <div className="data-row" style={{ marginTop: '1rem', borderTop: '1px solid var(--border)', paddingTop: '0.8rem' }}>
+                       <span className="data-label">Ambient Temp</span>
+                       <div className="data-value">{data.sensor_raw.dht22.temp_c}°C / {data.sensor_raw.dht22.temp_f}°F</div>
                     </div>
-                 </div>
-               ))}
+                    <div className="data-row">
+                       <span className="data-label">Humidity</span>
+                       <div className="data-value">{data.sensor_raw.dht22.humidity}%</div>
+                    </div>
+                  </>
+                )}
+                
+                {data.sensor_raw?.ds18b20 && (
+                  <div className="data-row">
+                     <span className="data-label">Soil Probe Temp</span>
+                     <div className="data-value">
+                        {data.sensor_raw.ds18b20.temp_c}°C
+                     </div>
+                  </div>
+                )}
+
+                {data.sensor_raw?.rain && (
+                  <div className="data-row" style={{ borderBottom: 'none', background: 'rgba(234, 179, 78, 0.05)', padding: '1rem', borderRadius: '12px', marginTop: '1rem', border: '1px solid var(--border)' }}>
+                     <span className="data-label" style={{ fontWeight: 'bold', color: 'var(--accent2)' }}>RAINFALL DETECTION</span>
+                     <div className="data-value" style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                       <span 
+                         className="badge" 
+                         style={{ 
+                           minWidth: '160px',
+                           padding: '0.6rem 1.2rem',
+                           borderRadius: '8px',
+                           fontSize: '1rem',
+                           fontWeight: '900',
+                           letterSpacing: '0.05em',
+                           backgroundColor: (() => {
+                             const intensity = (data.sensor_raw.rain.intensity || '').toLowerCase();
+                             if (intensity.includes('heavy') || intensity.includes('high')) return '#d1493b';
+                             if (intensity.includes('mod')) return '#eab34e';
+                             return 'rgba(97, 187, 97, 0.8)';
+                           })(),
+                           color: '#fff',
+                           border: '2px solid rgba(255,255,255,0.2)',
+                           boxShadow: '0 4px 15px rgba(0,0,0,0.3)',
+                           textAlign: 'center'
+                         }}
+                       >
+                        {(() => {
+                           const intensity = (data.sensor_raw.rain.intensity || '').toLowerCase();
+                           if (intensity.includes('light') || intensity.includes('low')) return 'LOW RAINFALL';
+                           if (intensity.includes('heavy') || intensity.includes('high')) return 'HIGH RAINFALL';
+                           if (intensity.includes('mod')) return 'MODERATE RAINFALL';
+                           return 'NO RAIN';
+                        })()}
+                       </span>
+                       <div style={{ display: 'flex', flexDirection: 'column', fontSize: '0.8rem', color: 'var(--accent2)' }}>
+                          <span style={{ fontWeight: '600' }}>{data.sensor_raw.rain.intensity?.toUpperCase()} INTENSITY</span>
+                          <span style={{ opacity: 0.6 }}>Signal: {data.sensor_raw.rain.raw}</span>
+                       </div>
+                     </div>
+                  </div>
+                )}
                <div className="data-row" style={{ marginTop: '0.8rem', border: 'none', flexDirection: 'column', alignItems: 'flex-start' }}>
                  <span className="data-label" style={{ fontSize: '0.85rem' }}>Raw Soil Data Interface via Wi-Fi</span>
                  <pre style={{ 
