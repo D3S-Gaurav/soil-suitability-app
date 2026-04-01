@@ -2,18 +2,12 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import json
 import threading
-import os
-from dotenv import load_dotenv
-
-load_dotenv()
-
 from pydantic import BaseModel
 import random
 
 from sensor_reader import read_sensor_data, read_sensor_from_ip
 from soil_engine import evaluate_soil, evaluate_all_crops
 from dataset_loader import load_crop_data, list_all_crops
-from soil_ai import analyze_soil_data
 
 app = FastAPI(title="Soil Suitability API")
 
@@ -24,14 +18,26 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Shared latest sensor reading
+# Last successful sensor reading
 latest_sensor_data = {"N": 0, "P": 0, "K": 0, "pH": 7.0, "moisture": 0}
+is_simulating = False
 
 def sensor_loop():
-    """Background thread: continuously read sensor data"""
-    global latest_sensor_data
+    """Background thread: continuously read sensor data from SERIAL or simulation"""
+    global latest_sensor_data, is_simulating
+    from sensor_reader import read_sensor_data
+    
     for data in read_sensor_data():
-        latest_sensor_data = data
+        # ONLY update if we don't have a Wi-Fi sensor connected
+        # or if we want to keep the simulated stream as a secondary source
+        if not connected_sensor_ip:
+            latest_sensor_data = data
+            is_simulating = True
+        else:
+            is_simulating = False
+            # If we have an IP, we don't let the serial/sim loop overwrite the latest_sensor_data
+            # unless we specifically want it to. For now, silence it.
+            pass
 
 threading.Thread(target=sensor_loop, daemon=True).start()
 
@@ -52,35 +58,67 @@ connected_sensor_ip = None
 @app.post("/sensor/connect")
 def connect_to_sensor_ip(config: SensorConfig):
     global connected_sensor_ip
-    connected_sensor_ip = config.ip
+    # Store the IP immediately
+    ip_to_test = config.ip.strip()
+    if not ip_to_test:
+        return {"status": "error", "message": "Invalid IP/URL provided."}
+    
+    connected_sensor_ip = ip_to_test
+    print(f"Setting sensor IP to: {connected_sensor_ip}")
+    
     # Test connection
     data = read_sensor_from_ip(connected_sensor_ip)
     if data:
-        return {"status": "success", "message": f"Successfully connected to sensor at {connected_sensor_ip}"}
-    return {"status": "error", "message": f"Could not reach sensor at {connected_sensor_ip}"}
+        return {
+            "status": "success", 
+            "message": f"Successfully connected to sensor at {connected_sensor_ip}",
+            "raw_data": data
+        }
+    return {
+        "status": "error", 
+        "message": f"Could not reach sensor at {connected_sensor_ip}. Verification failed."
+    }
 
 @app.get("/sensor/status")
 def check_sensor_status():
     global connected_sensor_ip
     if not connected_sensor_ip:
         return {"status": "error", "message": "No sensor IP configured. Please connect first."}
+    
     data = read_sensor_from_ip(connected_sensor_ip)
     if data:
-        return {"status": "success", "message": f"Sensor at {connected_sensor_ip} is ONLINE."}
-    return {"status": "error", "message": f"Sensor at {connected_sensor_ip} is OFFLINE."}
+        return {
+            "status": "success", 
+            "message": f"Sensor at {connected_sensor_ip} is ONLINE.",
+            "raw_data": data
+        }
+    return {
+        "status": "error", 
+        "message": f"Sensor at {connected_sensor_ip} is OFFLINE or unreachable."
+    }
 
 @app.get("/connect_sensor")
-def connect_sensor():
+def connect_sensor(ip: str = None):
     """Manual trigger to read and return a single sensor data payload"""
     try:
-        global latest_sensor_data
+        global latest_sensor_data, connected_sensor_ip
+        
+        # If an IP is provided in the request, prioritize it and update the connection
+        if ip:
+            ip = ip.strip()
+            print(f"Direct fetch request for IP: {ip}")
+            connected_sensor_ip = ip
         
         if connected_sensor_ip:
+            print(f"Attempting to read from: {connected_sensor_ip}")
             data = read_sensor_from_ip(connected_sensor_ip)
             if not data:
-                raise Exception("Failed to read from Wi-Fi sensor")
+                # If we have an IP but it failed, we don't want to fallback to random data
+                # as that confuses the user into thinking it's connected to 'something'
+                raise Exception(f"Failed to read from Wi-Fi sensor at {connected_sensor_ip}")
         else:
-            # Fallback to serial simulation if no IP
+            # ONLY fallback to serial simulation IF NO IP was ever configured
+            print("No IP configured, falling back to serial/simulation...")
             from sensor_reader import read_sensor_data
             reader = read_sensor_data()
             data = next(reader)
@@ -88,8 +126,9 @@ def connect_sensor():
         latest_sensor_data = data
         return {"success": True, "data": data}
     except Exception as e:
+        print(f"Connect sensor error: {e}")
         from fastapi.responses import JSONResponse
-        return JSONResponse(status_code=500, content={"error": f"Failed to fetch sensor data: {str(e)}"})
+        return JSONResponse(status_code=500, content={"error": f"Connection Failed: {str(e)}"})
 
 @app.get("/evaluate/{crop_name}")
 def evaluate(crop_name: str):
@@ -98,16 +137,3 @@ def evaluate(crop_name: str):
 @app.get("/evaluate_all")
 def evaluate_all():
     return {"suitable_crops": evaluate_all_crops(latest_sensor_data)}
-
-@app.post("/api/analyze")
-def analyze(sensor_data: dict):
-    if not any(k in sensor_data for k in ["N", "nitrogen"]):
-        from fastapi.responses import JSONResponse
-        return JSONResponse(status_code=400, content={"error": "Missing required NPK values"})
-    try:
-        analysis = analyze_soil_data(sensor_data)
-        return {"success": True, "analysis": analysis}
-    except Exception as e:
-        from fastapi.responses import JSONResponse
-        return JSONResponse(status_code=500, content={"error": "Analysis failed: " + str(e)})
-

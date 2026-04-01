@@ -49,7 +49,8 @@ function App() {
       .then(payload => {
         setConnectionStatus({
            status: payload.status,
-           message: payload.message
+           message: payload.message,
+           raw: payload.raw_data
         });
         
         // Try fetching evaluation data if crop is selected
@@ -76,7 +77,8 @@ function App() {
       .then(payload => {
         setConnectionStatus({
            status: payload.status,
-           message: payload.message
+           message: payload.message,
+           raw: payload.raw_data
         });
       })
       .catch(err => {
@@ -124,12 +126,27 @@ function App() {
     setAiAnalysis(null);
     setData(null);
 
-    fetch(`${API_HTTP}/connect_sensor`)
-      .then(res => res.json())
+    // Pass the IP from state to the backend so it can 'connect' on the fly if needed
+    const url = sensorIP 
+      ? `${API_HTTP}/connect_sensor?ip=${encodeURIComponent(sensorIP)}`
+      : `${API_HTTP}/connect_sensor`;
+
+    fetch(url)
+      .then(res => {
+        if (!res.ok) {
+           return res.json().then(err => { throw new Error(err.error || "Connection Failed") });
+        }
+        return res.json();
+      })
       .then(payload => {
         if (payload.error) {
           setError(payload.error);
         } else {
+          // If we have an IP, update the connection hub status automatically
+          if (sensorIP) {
+             checkConnection();
+          }
+          
           // Immediately evaluate the fetched data for the selected crop
           if (selectedCrop) {
             fetchEvaluation();
@@ -138,7 +155,7 @@ function App() {
       })
       .catch(err => {
         console.error("Failed to connect to sensor", err);
-        setError("Could not read from Wi-Fi sensor. Make sure the sensor IP is connected.");
+        setError(`Connection Status: ${err.message}. Please check if the sensor IP is correct and accessible.`);
       })
       .finally(() => setLoading(false));
   };
@@ -233,7 +250,7 @@ function App() {
               transition: 'all 0.2s ease'
             }}
           >
-            {loading ? 'Connecting...' : 'Connect Sensor'}
+            {loading ? 'Validating...' : 'Connect Sensor'}
           </button>
           
           <button 
@@ -258,14 +275,19 @@ function App() {
             <div style={{
               padding: '0.5rem 1rem', 
               borderRadius: '8px', 
-              fontSize: '0.9rem',
+              fontSize: '0.85rem',
+              maxWidth: '300px',
               backgroundColor: connectionStatus.status === 'success' 
                 ? 'rgba(40,167,69,0.1)' 
                 : 'rgba(255,193,7,0.1)',
               border: `1px solid ${connectionStatus.status === 'success' ? '#28a745' : '#ffc107'}`, 
-              color: connectionStatus.status === 'success' ? '#28a745' : '#ffc107'
+              color: connectionStatus.status === 'success' ? '#28a745' : '#eab34e',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '0.2rem'
             }}>
-              {connectionStatus.message}
+              <strong>{connectionStatus.status === 'success' ? 'Connected' : 'Connection Hub'}</strong>
+              <span>{connectionStatus.message}</span>
             </div>
           )}
         </div>
@@ -381,8 +403,21 @@ function App() {
                     </div>
                  </div>
                ))}
-               <div className="data-row" style={{ marginTop: '0.8rem', border: 'none' }}>
+               <div className="data-row" style={{ marginTop: '0.8rem', border: 'none', flexDirection: 'column', alignItems: 'flex-start' }}>
                  <span className="data-label" style={{ fontSize: '0.85rem' }}>Raw Soil Data Interface via Wi-Fi</span>
+                 <pre style={{ 
+                   fontSize: '0.7rem', 
+                   background: 'rgba(0,0,0,0.3)', 
+                   padding: '0.5rem', 
+                   borderRadius: '4px', 
+                   width: '100%',
+                   marginTop: '0.5rem',
+                   maxHeight: '100px',
+                   overflow: 'auto',
+                   color: 'var(--accent2)'
+                 }}>
+                   {connectionStatus?.raw ? JSON.stringify(connectionStatus.raw, null, 2) : 'No raw data captured yet.'}
+                 </pre>
                </div>
             </div>
 
