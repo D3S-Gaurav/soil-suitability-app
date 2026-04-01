@@ -45,13 +45,7 @@ def read_sensor_data():
                 yield data
     except serial.SerialException as e:
         print(f"Serial error: {e}")
-        # FALLBACK: simulate data for testing
+        # No fake fallback data: cleanly report disconnection
         while True:
-            yield {
-                "N": random.randint(0, 140),
-                "P": random.randint(5, 145),
-                "K": random.randint(5, 205),
-                "pH": round(random.uniform(3.5, 9.5), 2),
-                "moisture": random.randint(10, 70)
-            }
+            yield {"status": "disconnected", "message": f"Sensor on {SERIAL_PORT} disconnected"}
             time.sleep(3)

@@ -21,6 +21,7 @@ app.add_middleware(
 # Last successful sensor reading
 latest_sensor_data = {"N": 0, "P": 0, "K": 0, "pH": 7.0, "moisture": 0}
 is_simulating = False
+connected_sensor_ip = None
 
 def sensor_loop():
     """Background thread: continuously read sensor data from SERIAL, Wi-Fi, or simulation"""
@@ -36,9 +37,11 @@ def sensor_loop():
                 if data:
                     latest_sensor_data = data
                     is_simulating = False
-                # Extremely high frequency polling (as requested, but with a tiny safety break)
-                # 1ms is impossible for HTTP, so we use a minimal 100ms delay to prevent crashing the sensor.
-                time.sleep(0.1) 
+                else:
+                    latest_sensor_data = {"status": "disconnected", "message": f"Wi-Fi sensor at {connected_sensor_ip} disconnected"}
+                
+                # Slower polling rate (2.0s) to prevent crashing the Wi-Fi microcontroller TCP stack
+                time.sleep(2.0) 
             else:
                 # Falling back to Serial or Simulation
                 reader = read_sensor_data()
@@ -65,8 +68,6 @@ def get_sensor():
 
 class SensorConfig(BaseModel):
     ip: str
-
-connected_sensor_ip = None
 
 @app.post("/sensor/connect")
 def connect_to_sensor_ip(config: SensorConfig):
@@ -126,17 +127,19 @@ def connect_sensor(ip: str = None):
             print(f"Attempting to read from: {connected_sensor_ip}")
             data = read_sensor_from_ip(connected_sensor_ip)
             if not data:
-                # If we have an IP but it failed, we don't want to fallback to random data
-                # as that confuses the user into thinking it's connected to 'something'
-                raise Exception(f"Failed to read from Wi-Fi sensor at {connected_sensor_ip}")
+                # Force an explicit disconnected state rather than a silent failure
+                data = {"status": "disconnected", "message": f"Wi-Fi sensor at {connected_sensor_ip} disconnected"}
         else:
-            # ONLY fallback to serial simulation IF NO IP was ever configured
-            print("No IP configured, falling back to serial/simulation...")
+            # ONLY fallback to serial IF NO IP was ever configured
+            print("No IP configured, reading from serial...")
             from sensor_reader import read_sensor_data
             reader = read_sensor_data()
             data = next(reader)
             
         latest_sensor_data = data
+        if data and data.get("status") == "disconnected":
+            # Pass the clean disconnection string back immediately as an error
+            return {"error": data.get("message")}
         return {"success": True, "data": data}
     except Exception as e:
         print(f"Connect sensor error: {e}")
@@ -150,3 +153,17 @@ def evaluate(crop_name: str):
 @app.get("/evaluate_all")
 def evaluate_all():
     return {"suitable_crops": evaluate_all_crops(latest_sensor_data)}
+
+from soil_ai import analyze_soil_data
+
+@app.post("/api/analyze")
+def analyze(sensor_data: dict):
+    if not any(k in sensor_data for k in ["N", "nitrogen"]):
+        from fastapi.responses import JSONResponse
+        return JSONResponse(status_code=400, content={"error": "Missing required fields in payload"})
+    try:
+        analysis = analyze_soil_data(sensor_data)
+        return {"success": True, "analysis": analysis}
+    except Exception as e:
+        from fastapi.responses import JSONResponse
+        return JSONResponse(status_code=500, content={"error": f"AI Analysis failed: {str(e)}"})

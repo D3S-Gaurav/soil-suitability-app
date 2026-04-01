@@ -9,6 +9,20 @@ def analyze_soil_data(sensor_data: dict) -> dict:
     Sends sensor JSON to Claude and returns AI-powered soil analysis.
     sensor_data example: {"N": 85, "P": 42, "K": 43, "pH": 6.5, "moisture": 38}
     """
+    # Security: Mitigate Prompt Injection
+    # We strictly extract and cast only expected numeric fields. Any extra malicious payload keys are discarded.
+    try:
+        safe_data = {
+            "N": float(sensor_data.get("N", 0)),
+            "P": float(sensor_data.get("P", 0)),
+            "K": float(sensor_data.get("K", 0)),
+            "pH": float(sensor_data.get("pH", 7.0)),
+            "moisture": float(sensor_data.get("moisture", 50))
+        }
+    except (TypeError, ValueError):
+        # Fallback to zeroed data if an attacker sends non-numeric strings
+        safe_data = {"N": 0, "P": 0, "K": 0, "pH": 7.0, "moisture": 50}
+
     prompt = f"""
 You are an expert agronomist and soil scientist. Analyze the following soil sensor data and provide:
 
@@ -20,7 +34,7 @@ You are an expert agronomist and soil scientist. Analyze the following soil sens
 6. **Confidence Level** (how confident you are in this analysis)
 
 Sensor Data (JSON):
-{json.dumps(sensor_data, indent=2)}
+{json.dumps(safe_data, indent=2)}
 
 NPK Reference Ranges:
 - Nitrogen (N): Low < 280 kg/ha, Medium 280-560 kg/ha, High > 560 kg/ha
