@@ -7,7 +7,10 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from sensor_reader import read_sensor_data
+from pydantic import BaseModel
+import random
+
+from sensor_reader import read_sensor_data, read_sensor_from_ip
 from soil_engine import evaluate_soil, evaluate_all_crops
 from dataset_loader import load_crop_data, list_all_crops
 from soil_ai import analyze_soil_data
