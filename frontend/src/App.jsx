@@ -14,6 +14,9 @@ function App() {
   const [sensorIP, setSensorIP] = useState('');
   const [connectionStatus, setConnectionStatus] = useState(null);
 
+  const [aiAnalysis, setAiAnalysis] = useState(null);
+  const [aiLoading, setAiLoading] = useState(false);
+
   useEffect(() => {
     // Fetch crops on mount
     fetch(`${API_HTTP}/crops`)
@@ -66,12 +69,58 @@ function App() {
   const handleRecommendationToggle = (e) => {
     const isChecked = e.target.checked;
     setRecommendationToggle(isChecked);
-    
-    if (isChecked) {
-      window.open('https://crop-recommendation-dashboard.example.com', '_blank');
-      // Reset the toggle after a short delay so it doesn't stay 'on'
-      setTimeout(() => setRecommendationToggle(false), 500);
-    }
+  };
+
+  const fetchAiAnalysis = (params) => {
+    setAiLoading(true);
+    const sensorData = {
+      N: params.N?.value || 0,
+      P: params.P?.value || 0,
+      K: params.K?.value || 0,
+      pH: params.pH?.value || 7,
+      moisture: 45 // Dummy value as not in field
+    };
+
+    fetch(`${API_HTTP}/api/analyze`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(sensorData),
+    })
+      .then(res => res.json())
+      .then(res => {
+        if (res.success) {
+          setAiAnalysis(res.analysis);
+        } else {
+          console.error("AI Error:", res.error);
+        }
+      })
+      .catch(err => console.error("Failed to fetch AI analysis", err))
+      .finally(() => setAiLoading(false));
+  };
+
+  const fetchSensorData = () => {
+    setLoading(true);
+    setError(null);
+    setAiAnalysis(null);
+    setData(null);
+
+    fetch(`${API_HTTP}/connect_sensor`)
+      .then(res => res.json())
+      .then(payload => {
+        if (payload.error) {
+          setError(payload.error);
+        } else {
+          // Immediately evaluate the fetched data for the selected crop
+          if (selectedCrop) {
+            fetchEvaluation();
+          }
+        }
+      })
+      .catch(err => {
+        console.error("Failed to connect to sensor", err);
+        setError("Could not connect to sensor device. Ensure it is plugged into COM3/Serial.");
+      })
+      .finally(() => setLoading(false));
   };
 
   const fetchEvaluation = () => {
@@ -87,11 +136,14 @@ function App() {
         } else {
           setData(payload);
           setLastUpdated(new Date().toLocaleTimeString());
+          if (recommendationToggle) {
+            fetchAiAnalysis(payload.params);
+          }
         }
       })
       .catch(err => {
         console.error("Failed to fetch evaluation", err);
-        setError("Failed to fetch data from the sensor.");
+        setError("Evaluation failed after sensor read.");
       })
       .finally(() => {
         setLoading(false);
@@ -112,18 +164,18 @@ function App() {
           <span className="app-subtitle">Real-Time Soil Suitability</span>
         </div>
         <div className="header-actions">
-          <div className="toggle-container">
-            <span className="toggle-text">Crop Recommendations</span>
-            <label className="toggle-switch">
-              <input 
-                type="checkbox" 
-                checked={recommendationToggle}
-                onChange={handleRecommendationToggle} 
-              />
-              <span className="slider round"></span>
-            </label>
-          </div>
-        </div>
+           <div className="toggle-container">
+             <span className="toggle-text">Show AI Insights</span>
+             <label className="toggle-switch">
+               <input 
+                 type="checkbox" 
+                 checked={recommendationToggle}
+                 onChange={handleRecommendationToggle} 
+               />
+               <span className="slider round"></span>
+             </label>
+           </div>
+         </div>
       </header>
 
       <main className="main-content">
@@ -196,12 +248,13 @@ function App() {
             ))}
           </select>
           <button 
-            onClick={fetchEvaluation} 
-            disabled={crops.length === 0 || loading}
+            onClick={fetchSensorData} 
+            disabled={loading}
+            className="connect-btn"
             style={{
               padding: '0.75rem 1.5rem',
               backgroundColor: 'var(--accent)',
-              color: 'var(--bg)',
+              color: 'white',
               border: 'none',
               borderRadius: '8px',
               fontFamily: 'inherit',
@@ -209,10 +262,50 @@ function App() {
               fontSize: '1rem',
               cursor: loading ? 'not-allowed' : 'pointer',
               opacity: loading ? 0.7 : 1,
+              transition: 'background-color 0.2s, transform 0.1s',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem'
+            }}
+          >
+            {loading ? 'Connecting...' : '🔌 Connect & Fetch Data'}
+          </button>
+          
+          <div className="divider" style={{ width: '1px', height: '24px', background: 'var(--border)', margin: '0 0.5rem' }}></div>
+          
+          <label htmlFor="cropSelect">Preview Crop Suitability:</label>
+          <select 
+            id="cropSelect" 
+            value={selectedCrop} 
+            onChange={handleCropChange}
+            disabled={crops.length === 0}
+          >
+            {crops.length === 0 && <option>Waiting for backend data...</option>}
+            {crops.map(crop => (
+               <option key={crop} value={crop}>
+                 {crop.charAt(0).toUpperCase() + crop.slice(1)}
+               </option>
+            ))}
+          </select>
+          
+          <button 
+            onClick={fetchEvaluation} 
+            disabled={!data || loading}
+            style={{
+              padding: '0.75rem 1.5rem',
+              backgroundColor: 'var(--text)',
+              color: 'var(--bg)',
+              border: 'none',
+              borderRadius: '8px',
+              fontFamily: 'inherit',
+              fontWeight: '600',
+              fontSize: '1rem',
+              cursor: (!data || loading) ? 'not-allowed' : 'pointer',
+              opacity: (!data || loading) ? 0.7 : 1,
               transition: 'background-color 0.2s',
             }}
           >
-            {loading ? 'Fetching...' : 'Fetch Live Data'}
+            Evaluate for {selectedCrop}
           </button>
         </div>
 
@@ -310,6 +403,62 @@ function App() {
                 )}
               </div>
             </div>
+
+            {/* AI Analysis Card */}
+            {recommendationToggle && (
+              <div className="card ai-card" style={{ gridColumn: '1 / -1', border: '1px solid var(--accent)' }}>
+                <h2 style={{ color: 'var(--accent)' }}>🤖 AI Soil Analysis</h2>
+                {aiLoading ? (
+                   <p style={{ textAlign: 'center', padding: '1rem' }}>Analyzing soil data with Claude...</p>
+                ) : aiAnalysis ? (
+                   <div>
+                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                       <div>
+                         <h3 style={{ fontSize: '1.1rem', marginBottom: '0.5rem' }}>Suitability Score: {aiAnalysis.suitabilityScore} ({aiAnalysis.grade})</h3>
+                         <p style={{ marginBottom: '1rem' }}><strong>Confidence:</strong> {aiAnalysis.confidenceLevel}</p>
+                         <h4 style={{ marginBottom: '0.5rem' }}>Nutrient Breakdown</h4>
+                         <ul className="list-items" style={{ marginBottom: '1rem' }}>
+                           <li><strong>Nitrogen:</strong> {aiAnalysis.nutrientAnalysis?.nitrogen}</li>
+                           <li><strong>Phosphorus:</strong> {aiAnalysis.nutrientAnalysis?.phosphorus}</li>
+                           <li><strong>Potassium:</strong> {aiAnalysis.nutrientAnalysis?.potassium}</li>
+                         </ul>
+                       </div>
+                       <div>
+                         <h4 style={{ marginBottom: '0.5rem' }}>Recommended Crops</h4>
+                         <ul className="list-items" style={{ marginBottom: '1rem' }}>
+                           {aiAnalysis.recommendedCrops?.map((c, i) => (
+                             <li key={i}><strong>{c.crop}:</strong> {c.reason} (Yield: {c.expectedYield})</li>
+                           ))}
+                         </ul>
+                       </div>
+                     </div>
+                     <h4 style={{ marginBottom: '0.5rem', marginTop: '1rem' }}>Summary & Actions</h4>
+                     <p style={{ marginBottom: '1rem' }}>{aiAnalysis.summary}</p>
+                     
+                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                       {aiAnalysis.issuesDetected?.length > 0 && (
+                         <div>
+                           <h4 style={{ color: 'var(--danger)', marginBottom: '0.5rem' }}>Issues Detected</h4>
+                           <ul className="list-items issues">
+                             {aiAnalysis.issuesDetected.map((issue, i) => <li key={i}>{issue}</li>)}
+                           </ul>
+                         </div>
+                       )}
+                       {aiAnalysis.correctiveActions?.length > 0 && (
+                         <div>
+                           <h4 style={{ color: 'var(--accent)', marginBottom: '0.5rem' }}>Corrective Actions</h4>
+                           <ul className="list-items suggestions">
+                             {aiAnalysis.correctiveActions.map((action, i) => <li key={i}>{action.action} (Priority: {action.priority})</li>)}
+                           </ul>
+                         </div>
+                       )}
+                     </div>
+                   </div>
+                ) : (
+                   <p style={{ textAlign: 'center', padding: '1rem' }}>Waiting for data to analyze...</p>
+                )}
+              </div>
+            )}
 
           </div>
         )}
