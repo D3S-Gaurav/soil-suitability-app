@@ -11,6 +11,8 @@ function App() {
   const [lastUpdated, setLastUpdated] = useState(null);
   const [loading, setLoading] = useState(false);
   const [recommendationToggle, setRecommendationToggle] = useState(false);
+  const [sensorIP, setSensorIP] = useState('');
+  const [connectionStatus, setConnectionStatus] = useState(null);
 
   useEffect(() => {
     // Fetch crops on mount
@@ -28,6 +30,38 @@ function App() {
         setError("Could not connect to backend API.");
       });
   }, []);
+
+  const connectToSensor = () => {
+    if (!sensorIP) return;
+    setLoading(true);
+    setConnectionStatus(null);
+    setError(null);
+    
+    fetch(`${API_HTTP}/sensor/connect`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ip: sensorIP })
+    })
+      .then(res => res.json())
+      .then(payload => {
+        setConnectionStatus({
+           status: payload.status,
+           message: payload.message
+        });
+        
+        // Try fetching evaluation data if crop is selected
+        if (selectedCrop) {
+           fetchEvaluation();
+        } else {
+           setLoading(false);
+        }
+      })
+      .catch(err => {
+        console.error("Failed to connect to sensor", err);
+        setError("Failed to communicate with API to connect sensor.");
+        setLoading(false);
+      });
+  };
 
   const handleRecommendationToggle = (e) => {
     const isChecked = e.target.checked;
@@ -93,6 +127,59 @@ function App() {
       </header>
 
       <main className="main-content">
+        <div className="controls" style={{ display: 'flex', gap: '1rem', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
+          <label htmlFor="sensorIP">Sensor IP:</label>
+          <input 
+            type="text" 
+            id="sensorIP"
+            value={sensorIP} 
+            onChange={(e) => setSensorIP(e.target.value)}
+            placeholder="e.g. 192.168.1.100"
+            style={{
+              padding: '0.6rem',
+              borderRadius: '8px',
+              border: '1px solid var(--border)',
+              backgroundColor: 'var(--surface)',
+              color: 'var(--text)',
+              fontFamily: 'inherit',
+              width: '200px'
+            }}
+          />
+          <button 
+            onClick={connectToSensor} 
+            disabled={!sensorIP || loading}
+            style={{
+              padding: '0.6rem 1rem',
+              backgroundColor: 'var(--primary)',
+              color: 'var(--bg)',
+              border: 'none',
+              borderRadius: '8px',
+              fontFamily: 'inherit',
+              fontWeight: '600',
+              cursor: (!sensorIP || loading) ? 'not-allowed' : 'pointer',
+              opacity: (!sensorIP || loading) ? 0.7 : 1,
+              transition: 'all 0.2s ease'
+            }}
+          >
+            {loading ? 'Connecting...' : 'Connect Sensor'}
+          </button>
+          
+          {connectionStatus && (
+            <div style={{
+              padding: '0.5rem 1rem', 
+              borderRadius: '8px', 
+              fontSize: '0.9rem',
+              backgroundColor: connectionStatus.status === 'success' 
+                ? 'rgba(40,167,69,0.1)' 
+                : 'rgba(255,193,7,0.1)',
+              border: `1px solid ${connectionStatus.status === 'success' ? '#28a745' : '#ffc107'}`, 
+              color: connectionStatus.status === 'success' ? '#28a745' : '#ffc107'
+            }}>
+              {connectionStatus.message}
+            </div>
+          )}
+        </div>
+
         <div className="controls" style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
           <label htmlFor="cropSelect">Target Crop Profile:</label>
           <select 
