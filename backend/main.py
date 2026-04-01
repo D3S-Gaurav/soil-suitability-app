@@ -44,20 +44,42 @@ def get_crops():
 def get_sensor():
     return latest_sensor_data
 
+class SensorConfig(BaseModel):
+    ip: str
+
+connected_sensor_ip = None
+
+@app.post("/sensor/connect")
+def connect_to_sensor_ip(config: SensorConfig):
+    global connected_sensor_ip
+    connected_sensor_ip = config.ip
+    # Test connection
+    data = read_sensor_from_ip(connected_sensor_ip)
+    if data:
+        return {"status": "success", "message": f"Successfully connected to sensor at {connected_sensor_ip}"}
+    return {"status": "error", "message": f"Could not reach sensor at {connected_sensor_ip}"}
+
 @app.get("/connect_sensor")
 def connect_sensor():
     """Manual trigger to read and return a single sensor data payload"""
     try:
-        from sensor_reader import read_sensor_data
-        reader = read_sensor_data()
-        data = next(reader)
-        # Update shared state as well
         global latest_sensor_data
+        
+        if connected_sensor_ip:
+            data = read_sensor_from_ip(connected_sensor_ip)
+            if not data:
+                raise Exception("Failed to read from Wi-Fi sensor")
+        else:
+            # Fallback to serial simulation if no IP
+            from sensor_reader import read_sensor_data
+            reader = read_sensor_data()
+            data = next(reader)
+            
         latest_sensor_data = data
         return {"success": True, "data": data}
     except Exception as e:
         from fastapi.responses import JSONResponse
-        return JSONResponse(status_code=500, content={"error": f"Failed to connect to sensor: {str(e)}"})
+        return JSONResponse(status_code=500, content={"error": f"Failed to fetch sensor data: {str(e)}"})
 
 @app.get("/evaluate/{crop_name}")
 def evaluate(crop_name: str):

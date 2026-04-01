@@ -118,7 +118,7 @@ function App() {
       })
       .catch(err => {
         console.error("Failed to connect to sensor", err);
-        setError("Could not connect to sensor device. Ensure it is plugged into COM3/Serial.");
+        setError("Could not read from Wi-Fi sensor. Make sure the sensor IP is connected.");
       })
       .finally(() => setLoading(false));
   };
@@ -344,7 +344,7 @@ function App() {
                  </div>
                ))}
                <div className="data-row" style={{ marginTop: '0.8rem', border: 'none' }}>
-                 <span className="data-label" style={{ fontSize: '0.85rem' }}>Raw Soil Data Interface via Arduino Serial Port</span>
+                 <span className="data-label" style={{ fontSize: '0.85rem' }}>Raw Soil Data Interface via Wi-Fi</span>
                </div>
             </div>
 
