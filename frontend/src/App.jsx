@@ -66,6 +66,26 @@ function App() {
       });
   };
 
+  const checkConnection = () => {
+    setLoading(true);
+    setConnectionStatus(null);
+    setError(null);
+    
+    fetch(`${API_HTTP}/sensor/status`)
+      .then(res => res.json())
+      .then(payload => {
+        setConnectionStatus({
+           status: payload.status,
+           message: payload.message
+        });
+      })
+      .catch(err => {
+        console.error("Failed to check sensor status", err);
+        setError("Error contacting the backend API.");
+      })
+      .finally(() => setLoading(false));
+  };
+
   const handleRecommendationToggle = (e) => {
     const isChecked = e.target.checked;
     setRecommendationToggle(isChecked);
@@ -214,6 +234,24 @@ function App() {
             }}
           >
             {loading ? 'Connecting...' : 'Connect Sensor'}
+          </button>
+          
+          <button 
+            onClick={checkConnection} 
+            disabled={loading}
+            style={{
+              padding: '0.6rem 1rem',
+              backgroundColor: 'var(--secondary)',
+              color: 'var(--text)',
+              border: '1px solid var(--border)',
+              borderRadius: '8px',
+              fontFamily: 'inherit',
+              cursor: loading ? 'not-allowed' : 'pointer',
+              opacity: loading ? 0.7 : 1,
+              transition: 'all 0.2s ease'
+            }}
+          >
+            Check Status
           </button>
           
           {connectionStatus && (

@@ -59,6 +59,16 @@ def connect_to_sensor_ip(config: SensorConfig):
         return {"status": "success", "message": f"Successfully connected to sensor at {connected_sensor_ip}"}
     return {"status": "error", "message": f"Could not reach sensor at {connected_sensor_ip}"}
 
+@app.get("/sensor/status")
+def check_sensor_status():
+    global connected_sensor_ip
+    if not connected_sensor_ip:
+        return {"status": "error", "message": "No sensor IP configured. Please connect first."}
+    data = read_sensor_from_ip(connected_sensor_ip)
+    if data:
+        return {"status": "success", "message": f"Sensor at {connected_sensor_ip} is ONLINE."}
+    return {"status": "error", "message": f"Sensor at {connected_sensor_ip} is OFFLINE."}
+
 @app.get("/connect_sensor")
 def connect_sensor():
     """Manual trigger to read and return a single sensor data payload"""
