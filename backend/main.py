@@ -23,21 +23,34 @@ latest_sensor_data = {"N": 0, "P": 0, "K": 0, "pH": 7.0, "moisture": 0}
 is_simulating = False
 
 def sensor_loop():
-    """Background thread: continuously read sensor data from SERIAL or simulation"""
+    """Background thread: continuously read sensor data from SERIAL, Wi-Fi, or simulation"""
     global latest_sensor_data, is_simulating
-    from sensor_reader import read_sensor_data
+    from sensor_reader import read_sensor_data, read_sensor_from_ip
+    import time
     
-    for data in read_sensor_data():
-        # ONLY update if we don't have a Wi-Fi sensor connected
-        # or if we want to keep the simulated stream as a secondary source
-        if not connected_sensor_ip:
-            latest_sensor_data = data
-            is_simulating = True
-        else:
-            is_simulating = False
-            # If we have an IP, we don't let the serial/sim loop overwrite the latest_sensor_data
-            # unless we specifically want it to. For now, silence it.
-            pass
+    while True:
+        try:
+            if connected_sensor_ip:
+                # Polling Wi-Fi sensor
+                data = read_sensor_from_ip(connected_sensor_ip)
+                if data:
+                    latest_sensor_data = data
+                    is_simulating = False
+                # Extremely high frequency polling (as requested, but with a tiny safety break)
+                # 1ms is impossible for HTTP, so we use a minimal 100ms delay to prevent crashing the sensor.
+                time.sleep(0.1) 
+            else:
+                # Falling back to Serial or Simulation
+                reader = read_sensor_data()
+                for data in reader:
+                    if connected_sensor_ip: break # Exit if IP is suddenly set
+                    latest_sensor_data = data
+                    is_simulating = True
+                    time.sleep(1) # Simulated data doesn't need to be 1ms
+                    
+        except Exception as e:
+            print(f"Background sensor loop error: {e}")
+            time.sleep(2) # Wait before retry on error
 
 threading.Thread(target=sensor_loop, daemon=True).start()
 
