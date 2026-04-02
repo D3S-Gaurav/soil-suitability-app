@@ -45,7 +45,7 @@ def read_sensor_data():
                 yield data
     except serial.SerialException as e:
         print(f"Serial error: {e}")
-        # FALLBACK: simulate data for testing
+        # FALLBACK: simulate data for testing (includes light_lux & pressure_hpa for new UI cards)
         while True:
             yield {
                 "N": random.randint(0, 140),
@@ -57,3 +57,4 @@ def read_sensor_data():
                 "pressure_hpa": round(random.uniform(980.0, 1050.0), 1)
             }
             time.sleep(3)
+

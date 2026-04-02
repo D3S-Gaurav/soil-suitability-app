@@ -48,7 +48,9 @@ function App() {
                    params: prev?.params || {},
                    sensor_raw: res,
                    suitable: prev?.suitable || false,
-                   verdict: prev?.verdict || ''
+                   verdict: prev?.verdict || '',
+                   issues: prev?.issues || [],
+                   suggestions: prev?.suggestions || []
                 }));
              }
           })
