@@ -8,7 +8,7 @@ import LightSensor from './components/LightSensor';
 import BarometricPressure from './components/BarometricPressure';
 import DataControls from './components/DataControls';
 import { safe, hasValue } from './utils/sensorHelpers';
-import { flattenSensorReading, exportToExcel } from './utils/excelExport';
+import { flattenSensorReading, exportToCSV } from './utils/excelExport';
 
 const API_HTTP = "http://localhost:8000";
 
@@ -308,7 +308,7 @@ function App() {
   }, [isRecording]);
 
   const handleDownload = useCallback(() => {
-    return exportToExcel(recordedData, sessionInfo.name, sessionInfo.startTime);
+    return exportToCSV(recordedData, sessionInfo.name, sessionInfo.startTime);
   }, [recordedData, sessionInfo]);
 
   const handleTestNameChange = useCallback((name) => {
