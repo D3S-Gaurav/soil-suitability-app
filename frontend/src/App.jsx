@@ -564,7 +564,7 @@ function App() {
             <h2>❌ Connection Issue</h2>
             <p>{error}</p>
             <p style={{ marginTop: '1rem', fontSize: '0.9rem', color: 'var(--muted)' }}>
-              Make sure the FastAPI backend is running on http://localhost:8000
+              Note: The physical sensor must be on the same local network as the backend. For cloud deployments, use the CSV Upload feature below to analyze historical data with Gemini AI.
             </p>
           </div>
         ) : loading ? (
