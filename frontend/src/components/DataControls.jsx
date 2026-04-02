@@ -81,10 +81,10 @@ function DataControls({
           className="download-btn"
           onClick={handleDownload}
           disabled={recordCount === 0}
-          title={recordCount === 0 ? 'No data recorded yet' : `Download ${recordCount} readings as Excel`}
+          title={recordCount === 0 ? 'No data recorded yet' : `Download ${recordCount} readings as CSV`}
         >
           <span className="download-btn-icon">📥</span>
-          <span className="download-btn-text">Download Excel</span>
+          <span className="download-btn-text">Download CSV</span>
         </button>
 
         {/* Download Feedback */}
