@@ -1,4 +1,4 @@
-import * as XLSX from 'xlsx';
+// No need for XLSX library for CSV export
 
 /**
  * Flatten a single sensor data tick into a row object for Excel export.
@@ -42,85 +42,60 @@ export function flattenSensorReading(sensorRaw, sessionId, sessionName) {
 }
 
 /**
- * Export recorded data array to a beautifully formatted .xlsx file.
- * Uses dynamic naming: [testName]_[date]_[sessionTime].xlsx
+ * Export recorded data array to a CSV file.
+ * Uses dynamic naming: [testName]_[date]_[sessionTime].csv
  * 
  * @param {Array} recordedData - Array of flattened row objects
  * @param {string} testName - User-defined test name
  * @param {Date} sessionStart - When recording started
  * @returns {{ success: boolean, filename?: string, error?: string }}
  */
-export function exportToExcel(recordedData, testName, sessionStart) {
+export function exportToCSV(recordedData, testName, sessionStart) {
   try {
     if (!recordedData || recordedData.length === 0) {
       return { success: false, error: 'No recorded data to export.' };
     }
 
-    // Dynamic filename: test1_2026-04-02_18-42.xlsx
+    // Dynamic filename: test1_2026-04-02_18-42.csv
     const now = sessionStart || new Date();
     const dateStr = now.toISOString().substring(0, 10); // 2026-04-02
     const timeStr = now.toTimeString().substring(0, 5).replace(':', '-'); // 18-42
     const safeName = (testName || 'test').replace(/[^a-zA-Z0-9_-]/g, '_');
-    const filename = `${safeName}_${dateStr}_${timeStr}.xlsx`;
+    const filename = `${safeName}_${dateStr}_${timeStr}.csv`;
 
-    // Create workbook and worksheet
-    const wb = XLSX.utils.book_new();
-    const ws = XLSX.utils.json_to_sheet(recordedData);
+    const headers = Object.keys(recordedData[0]);
+    const csvContent = [
+      headers.join(','),
+      ...recordedData.map(row => 
+        headers.map(header => {
+          let cell = row[header] === null || row[header] === undefined ? '' : row[header].toString();
+          // Escape quotes and commas
+          cell = cell.replace(/"/g, '""');
+          if (cell.search(/("|,|\n)/g) >= 0) {
+            cell = `"${cell}"`;
+          }
+          return cell;
+        }).join(',')
+      )
+    ].join('\n');
 
-    // Column widths for readability
-    const colWidths = [
-      { wch: 14 }, // Session ID
-      { wch: 20 }, // Timestamp
-      { wch: 12 }, // N
-      { wch: 8 },  // N Status
-      { wch: 12 }, // P
-      { wch: 8 },  // P Status
-      { wch: 12 }, // K
-      { wch: 8 },  // K Status
-      { wch: 8 },  // pH
-      { wch: 8 },  // pH Status
-      { wch: 12 }, // Moisture
-      { wch: 10 }, // Moisture Status
-      { wch: 12 }, // Light
-      { wch: 10 }, // Light Status
-      { wch: 14 }, // Pressure
-      { wch: 12 }, // Pressure Status
-      { wch: 16 }, // Ambient Temp
-      { wch: 10 }, // Temp Status
-      { wch: 12 }, // Humidity
-      { wch: 12 }, // Humidity Status
-      { wch: 14 }, // Soil Probe
-      { wch: 12 }, // Soil Probe Status
-      { wch: 14 }, // Rain Intensity
-      { wch: 12 }, // Rain Signal
-      { wch: 10 }, // Rain Status
-    ];
-    ws['!cols'] = colWidths;
-
-    // Add summary sheet
-    const summaryData = [
-      { 'Property': 'Test Name', 'Value': testName },
-      { 'Property': 'Export Date', 'Value': new Date().toISOString().replace('T', ' ').substring(0, 19) },
-      { 'Property': 'Session Start', 'Value': now.toISOString().replace('T', ' ').substring(0, 19) },
-      { 'Property': 'Total Readings', 'Value': recordedData.length },
-      { 'Property': 'Duration', 'Value': `${Math.round((Date.now() - now.getTime()) / 1000)}s` },
-      { 'Property': 'Unique Sessions', 'Value': [...new Set(recordedData.map(r => r['Session ID']))].length },
-      { 'Property': 'Application', 'Value': 'SoilSense Dashboard' },
-      { 'Property': 'Format Version', 'Value': '1.0' },
-    ];
-    const wsSummary = XLSX.utils.json_to_sheet(summaryData);
-    wsSummary['!cols'] = [{ wch: 18 }, { wch: 40 }];
-
-    // Add sheets to workbook
-    XLSX.utils.book_append_sheet(wb, wsSummary, 'Summary');
-    XLSX.utils.book_append_sheet(wb, ws, 'Sensor Data');
-
-    // Trigger browser download
-    XLSX.writeFile(wb, filename);
+    // Trigger browser download via Blob
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    if (link.download !== undefined) {
+      const url = URL.createObjectURL(blob);
+      link.setAttribute('href', url);
+      link.setAttribute('download', filename);
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    }
 
     return { success: true, filename };
   } catch (err) {
-    console.error('Excel export failed:', err);
+    console.error('CSV export failed:', err);
     return { success: false, error: err.message || 'Export failed unexpectedly.' };
   }
 }

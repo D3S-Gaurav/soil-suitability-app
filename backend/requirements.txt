@@ -4,3 +4,6 @@ pandas==2.2.2
 pyserial==3.5
 websockets==12.0
 anthropic>=0.3.0
+google-generativeai>=0.4.0
+python-multipart>=0.0.9
+python-dotenv>=1.0.0
