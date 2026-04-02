@@ -167,6 +167,48 @@ function App() {
   const handleRecommendationToggle = (e) => {
     const isChecked = e.target.checked;
     setRecommendationToggle(isChecked);
+    // When toggled ON: if we already have sensor data, immediately fire Gemini Webhook
+    if (isChecked && data?.sensor_raw) {
+      triggerGeminiInsights(data.sensor_raw);
+    }
+  };
+
+  // Trigger Gemini webhook with current live sensor data (auto-generates a CSV internally)
+  const triggerGeminiInsights = (sensorRaw) => {
+    setWebhookLoading(true);
+    setWebhookResult(null);
+
+    // Build a minimal CSV from live sensor data
+    const headers = 'N,P,K,pH,moisture';
+    const values = [
+      sensorRaw?.N ?? 'NA',
+      sensorRaw?.P ?? 'NA',
+      sensorRaw?.K ?? 'NA',
+      sensorRaw?.pH ?? 'NA',
+      sensorRaw?.moisture ?? 'NA'
+    ].join(',');
+    const csvContent = `${headers}\n${values}`;
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const file = new File([blob], 'live_sensor.csv', { type: 'text/csv' });
+
+    const formData = new FormData();
+    formData.append('crop_type', selectedCrop || 'unknown');
+    formData.append('file', file);
+
+    fetch(`${API_HTTP}/webhook/analyze-soil`, {
+      method: 'POST',
+      body: formData,
+    })
+      .then(res => res.json())
+      .then(res => {
+        if (res.status === 'success') {
+          setWebhookResult(res.ai_verdict);
+        } else {
+          setWebhookResult(`Gemini Error: ${res.message}`);
+        }
+      })
+      .catch(err => setWebhookResult(`Network Error: ${err.message}`))
+      .finally(() => setWebhookLoading(false));
   };
 
   const fetchAiAnalysis = (params) => {
@@ -530,7 +572,8 @@ function App() {
         ) : !data ? (
           <div className="card" style={{ textAlign: 'center', padding: '3rem 2rem' }}>
             <h2 style={{ justifyContent: 'center', marginBottom: '1rem' }}>Ready to Evaluate</h2>
-            <p style={{ color: 'var(--muted)' }}>Select a crop and click "Fetch Live Data" to read from the field sensors.</p>
+            <p style={{ color: 'var(--muted)' }}>Enter the sensor IP above, click <strong>"Connect Sensor"</strong> and then <strong>"Connect &amp; Fetch Data"</strong> to read live field data.</p>
+            <p style={{ color: 'var(--muted)', marginTop: '0.5rem', fontSize: '0.85rem' }}>All dashboard cards will show <strong>NA</strong> until the sensor is physically connected and returning data.</p>
           </div>
         ) : (
           <div className="dashboard-grid">
@@ -578,7 +621,45 @@ function App() {
                </div>
             </div>
 
-            {/* Requirements Card */}
+            {/* Soil Moisture Card */}
+            <div className="card">
+              <h2>💧 Soil Moisture</h2>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '1rem 0' }}>
+                <div style={{
+                  fontSize: '3.5rem',
+                  lineHeight: 1,
+                  marginBottom: '0.5rem',
+                  filter: !hasValue(data?.sensor_raw?.moisture) ? 'grayscale(1) opacity(0.4)' : 'none'
+                }}>
+                  {(() => {
+                    const m = data?.sensor_raw?.moisture;
+                    if (!hasValue(m)) return '🌵';
+                    if (m < 20) return '🌵';
+                    if (m < 40) return '🌱';
+                    if (m < 65) return '💧';
+                    return '🌊';
+                  })()}
+                </div>
+                <div style={{ fontSize: '2.2rem', fontWeight: '700', color: 'var(--accent)' }}>
+                  {hasValue(data?.sensor_raw?.moisture) ? `${safe(data.sensor_raw.moisture)}%` : 'NA'}
+                </div>
+                <div style={{ fontSize: '0.85rem', color: 'var(--muted)', marginTop: '0.25rem' }}>
+                  {(() => {
+                    const m = data?.sensor_raw?.moisture;
+                    if (!hasValue(m)) return 'Sensor not connected';
+                    if (m < 20) return '🔴 Very Dry — Irrigate immediately';
+                    if (m < 40) return '🟡 Dry — Irrigation recommended';
+                    if (m < 65) return '🟢 Optimal — Good moisture level';
+                    return '🔵 Saturated — Drainage may be needed';
+                  })()}
+                </div>
+              </div>
+              <div className="data-row" style={{ marginTop: '0.5rem' }}>
+                <span className="data-label">Optimal Range</span>
+                <span>40% – 65%</span>
+              </div>
+            </div>
+
             <div className="card">
               <h2>🌿 {data.crop ? data.crop.charAt(0).toUpperCase() + data.crop.slice(1) : 'Crop'} Requirements</h2>
               {['N', 'P', 'K', 'pH'].map(param => {
@@ -634,58 +715,28 @@ function App() {
               </div>
             </div>
 
-            {/* AI Analysis Card (untouched per user request) */}
+            {/* AI Insights Card — powered by Gemini Webhook */}
             {recommendationToggle && (
               <div className="card ai-card" style={{ gridColumn: '1 / -1', border: '1px solid var(--accent)' }}>
-                <h2 style={{ color: 'var(--accent)' }}>🤖 AI Soil Analysis</h2>
-                {aiLoading ? (
-                   <p style={{ textAlign: 'center', padding: '1rem' }}>Analyzing soil data with Claude...</p>
-                ) : aiAnalysis ? (
-                   <div>
-                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                       <div>
-                         <h3 style={{ fontSize: '1.1rem', marginBottom: '0.5rem' }}>Suitability Score: {aiAnalysis.suitabilityScore} ({aiAnalysis.grade})</h3>
-                         <p style={{ marginBottom: '1rem' }}><strong>Confidence:</strong> {aiAnalysis.confidenceLevel}</p>
-                         <h4 style={{ marginBottom: '0.5rem' }}>Nutrient Breakdown</h4>
-                         <ul className="list-items" style={{ marginBottom: '1rem' }}>
-                           <li><strong>Nitrogen:</strong> {aiAnalysis.nutrientAnalysis?.nitrogen}</li>
-                           <li><strong>Phosphorus:</strong> {aiAnalysis.nutrientAnalysis?.phosphorus}</li>
-                           <li><strong>Potassium:</strong> {aiAnalysis.nutrientAnalysis?.potassium}</li>
-                         </ul>
-                       </div>
-                       <div>
-                         <h4 style={{ marginBottom: '0.5rem' }}>Recommended Crops</h4>
-                         <ul className="list-items" style={{ marginBottom: '1rem' }}>
-                           {aiAnalysis.recommendedCrops?.map((c, i) => (
-                             <li key={i}><strong>{c.crop}:</strong> {c.reason} (Yield: {c.expectedYield})</li>
-                           ))}
-                         </ul>
-                       </div>
-                     </div>
-                     <h4 style={{ marginBottom: '0.5rem', marginTop: '1rem' }}>Summary & Actions</h4>
-                     <p style={{ marginBottom: '1rem' }}>{aiAnalysis.summary}</p>
-                     
-                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                       {aiAnalysis.issuesDetected?.length > 0 && (
-                         <div>
-                           <h4 style={{ color: 'var(--danger)', marginBottom: '0.5rem' }}>Issues Detected</h4>
-                           <ul className="list-items issues">
-                             {aiAnalysis.issuesDetected.map((issue, i) => <li key={i}>{issue}</li>)}
-                           </ul>
-                         </div>
-                       )}
-                       {aiAnalysis.correctiveActions?.length > 0 && (
-                         <div>
-                           <h4 style={{ color: 'var(--accent)', marginBottom: '0.5rem' }}>Corrective Actions</h4>
-                           <ul className="list-items suggestions">
-                             {aiAnalysis.correctiveActions.map((action, i) => <li key={i}>{action.action} (Priority: {action.priority})</li>)}
-                           </ul>
-                         </div>
-                       )}
-                     </div>
-                   </div>
+                <h2 style={{ color: 'var(--accent)' }}>✨ Gemini AI Soil Insights</h2>
+                {webhookLoading ? (
+                  <p style={{ textAlign: 'center', padding: '1rem' }}>🤖 Gemini is analyzing your live sensor data...</p>
+                ) : webhookResult ? (
+                  <div style={{ marginTop: '0.5rem', padding: '1rem', background: 'var(--bg)', borderRadius: '8px', border: '1px solid var(--border)' }}>
+                    <pre style={{
+                      whiteSpace: 'pre-wrap',
+                      fontFamily: 'inherit',
+                      fontSize: '0.95rem',
+                      color: 'var(--text)',
+                      lineHeight: 1.7
+                    }}>
+                      {webhookResult}
+                    </pre>
+                  </div>
                 ) : (
-                   <p style={{ textAlign: 'center', padding: '1rem' }}>Waiting for data to analyze...</p>
+                  <p style={{ textAlign: 'center', padding: '1rem', color: 'var(--muted)' }}>
+                    Toggle "Show AI Insights" when sensor data is connected to get a Gemini analysis.
+                  </p>
                 )}
               </div>
             )}
