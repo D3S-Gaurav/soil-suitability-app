@@ -4,9 +4,10 @@ import base64
 import binascii
 import ipaddress
 import re
-from typing import Callable, List, Optional, Sequence, Tuple, TypeVar, cast
+from collections.abc import Sequence
+from typing import Callable, TypeVar, cast
 
-from . import exceptions
+from .exceptions import InvalidHeaderFormat, InvalidHeaderValue
 from .typing import (
     ConnectionOption,
     ExtensionHeader,
@@ -35,12 +36,18 @@ __all__ = [
 T = TypeVar("T")
 
 
-def build_host(host: str, port: int, secure: bool) -> str:
+def build_host(
+    host: str,
+    port: int,
+    secure: bool,
+    *,
+    always_include_port: bool = False,
+) -> str:
     """
     Build a ``Host`` header.
 
     """
-    # https://www.rfc-editor.org/rfc/rfc3986.html#section-3.2.2
+    # https://datatracker.ietf.org/doc/html/rfc3986#section-3.2.2
     # IPv6 addresses must be enclosed in brackets.
     try:
         address = ipaddress.ip_address(host)
@@ -52,18 +59,18 @@ def build_host(host: str, port: int, secure: bool) -> str:
         if address.version == 6:
             host = f"[{host}]"
 
-    if port != (443 if secure else 80):
+    if always_include_port or port != (443 if secure else 80):
         host = f"{host}:{port}"
 
     return host
 
 
 # To avoid a dependency on a parsing library, we implement manually the ABNF
-# described in https://www.rfc-editor.org/rfc/rfc6455.html#section-9.1 and
-# https://www.rfc-editor.org/rfc/rfc7230.html#appendix-B.
+# described in https://datatracker.ietf.org/doc/html/rfc6455#section-9.1 and
+# https://datatracker.ietf.org/doc/html/rfc7230#appendix-B.
 
 
-def peek_ahead(header: str, pos: int) -> Optional[str]:
+def peek_ahead(header: str, pos: int) -> str | None:
     """
     Return the next character from ``header`` at the given position.
 
@@ -96,19 +103,19 @@ def parse_OWS(header: str, pos: int) -> int:
 _token_re = re.compile(r"[-!#$%&\'*+.^_`|~0-9a-zA-Z]+")
 
 
-def parse_token(header: str, pos: int, header_name: str) -> Tuple[str, int]:
+def parse_token(header: str, pos: int, header_name: str) -> tuple[str, int]:
     """
     Parse a token from ``header`` at the given position.
 
     Return the token value and the new position.
 
     Raises:
-        InvalidHeaderFormat: on invalid inputs.
+        InvalidHeaderFormat: On invalid inputs.
 
     """
     match = _token_re.match(header, pos)
     if match is None:
-        raise exceptions.InvalidHeaderFormat(header_name, "expected token", header, pos)
+        raise InvalidHeaderFormat(header_name, "expected token", header, pos)
     return match.group(), match.end()
 
 
@@ -120,21 +127,19 @@ _quoted_string_re = re.compile(
 _unquote_re = re.compile(r"\\([\x09\x20-\x7e\x80-\xff])")
 
 
-def parse_quoted_string(header: str, pos: int, header_name: str) -> Tuple[str, int]:
+def parse_quoted_string(header: str, pos: int, header_name: str) -> tuple[str, int]:
     """
     Parse a quoted string from ``header`` at the given position.
 
     Return the unquoted value and the new position.
 
     Raises:
-        InvalidHeaderFormat: on invalid inputs.
+        InvalidHeaderFormat: On invalid inputs.
 
     """
     match = _quoted_string_re.match(header, pos)
     if match is None:
-        raise exceptions.InvalidHeaderFormat(
-            header_name, "expected quoted string", header, pos
-        )
+        raise InvalidHeaderFormat(header_name, "expected quoted string", header, pos)
     return _unquote_re.sub(r"\1", match.group()[1:-1]), match.end()
 
 
@@ -158,11 +163,11 @@ def build_quoted_string(value: str) -> str:
 
 
 def parse_list(
-    parse_item: Callable[[str, int, str], Tuple[T, int]],
+    parse_item: Callable[[str, int, str], tuple[T, int]],
     header: str,
     pos: int,
     header_name: str,
-) -> List[T]:
+) -> list[T]:
     """
     Parse a comma-separated list from ``header`` at the given position.
 
@@ -180,10 +185,10 @@ def parse_list(
     Return a list of items.
 
     Raises:
-        InvalidHeaderFormat: on invalid inputs.
+        InvalidHeaderFormat: On invalid inputs.
 
     """
-    # Per https://www.rfc-editor.org/rfc/rfc7230.html#section-7, "a recipient
+    # Per https://datatracker.ietf.org/doc/html/rfc7230#section-7, "a recipient
     # MUST parse and ignore a reasonable number of empty list elements";
     # hence while loops that remove extra delimiters.
 
@@ -206,9 +211,7 @@ def parse_list(
         if peek_ahead(header, pos) == ",":
             pos = parse_OWS(header, pos + 1)
         else:
-            raise exceptions.InvalidHeaderFormat(
-                header_name, "expected comma", header, pos
-            )
+            raise InvalidHeaderFormat(header_name, "expected comma", header, pos)
 
         # Remove extra delimiters before the next item.
         while peek_ahead(header, pos) == ",":
@@ -227,21 +230,21 @@ def parse_list(
 
 def parse_connection_option(
     header: str, pos: int, header_name: str
-) -> Tuple[ConnectionOption, int]:
+) -> tuple[ConnectionOption, int]:
     """
     Parse a Connection option from ``header`` at the given position.
 
     Return the protocol value and the new position.
 
     Raises:
-        InvalidHeaderFormat: on invalid inputs.
+        InvalidHeaderFormat: On invalid inputs.
 
     """
     item, pos = parse_token(header, pos, header_name)
     return cast(ConnectionOption, item), pos
 
 
-def parse_connection(header: str) -> List[ConnectionOption]:
+def parse_connection(header: str) -> list[ConnectionOption]:
     """
     Parse a ``Connection`` header.
 
@@ -251,7 +254,7 @@ def parse_connection(header: str) -> List[ConnectionOption]:
         header: value of the ``Connection`` header.
 
     Raises:
-        InvalidHeaderFormat: on invalid inputs.
+        InvalidHeaderFormat: On invalid inputs.
 
     """
     return parse_list(parse_connection_option, header, 0, "Connection")
@@ -264,35 +267,33 @@ _protocol_re = re.compile(
 
 def parse_upgrade_protocol(
     header: str, pos: int, header_name: str
-) -> Tuple[UpgradeProtocol, int]:
+) -> tuple[UpgradeProtocol, int]:
     """
     Parse an Upgrade protocol from ``header`` at the given position.
 
     Return the protocol value and the new position.
 
     Raises:
-        InvalidHeaderFormat: on invalid inputs.
+        InvalidHeaderFormat: On invalid inputs.
 
     """
     match = _protocol_re.match(header, pos)
     if match is None:
-        raise exceptions.InvalidHeaderFormat(
-            header_name, "expected protocol", header, pos
-        )
+        raise InvalidHeaderFormat(header_name, "expected protocol", header, pos)
     return cast(UpgradeProtocol, match.group()), match.end()
 
 
-def parse_upgrade(header: str) -> List[UpgradeProtocol]:
+def parse_upgrade(header: str) -> list[UpgradeProtocol]:
     """
     Parse an ``Upgrade`` header.
 
     Return a list of HTTP protocols.
 
     Args:
-        header: value of the ``Upgrade`` header.
+        header: Value of the ``Upgrade`` header.
 
     Raises:
-        InvalidHeaderFormat: on invalid inputs.
+        InvalidHeaderFormat: On invalid inputs.
 
     """
     return parse_list(parse_upgrade_protocol, header, 0, "Upgrade")
@@ -300,31 +301,31 @@ def parse_upgrade(header: str) -> List[UpgradeProtocol]:
 
 def parse_extension_item_param(
     header: str, pos: int, header_name: str
-) -> Tuple[ExtensionParameter, int]:
+) -> tuple[ExtensionParameter, int]:
     """
     Parse a single extension parameter from ``header`` at the given position.
 
     Return a ``(name, value)`` pair and the new position.
 
     Raises:
-        InvalidHeaderFormat: on invalid inputs.
+        InvalidHeaderFormat: On invalid inputs.
 
     """
     # Extract parameter name.
     name, pos = parse_token(header, pos, header_name)
     pos = parse_OWS(header, pos)
     # Extract parameter value, if there is one.
-    value: Optional[str] = None
+    value: str | None = None
     if peek_ahead(header, pos) == "=":
         pos = parse_OWS(header, pos + 1)
         if peek_ahead(header, pos) == '"':
             pos_before = pos  # for proper error reporting below
             value, pos = parse_quoted_string(header, pos, header_name)
-            # https://www.rfc-editor.org/rfc/rfc6455.html#section-9.1 says:
+            # https://datatracker.ietf.org/doc/html/rfc6455#section-9.1 says:
             # the value after quoted-string unescaping MUST conform to
             # the 'token' ABNF.
             if _token_re.fullmatch(value) is None:
-                raise exceptions.InvalidHeaderFormat(
+                raise InvalidHeaderFormat(
                     header_name, "invalid quoted header content", header, pos_before
                 )
         else:
@@ -336,7 +337,7 @@ def parse_extension_item_param(
 
 def parse_extension_item(
     header: str, pos: int, header_name: str
-) -> Tuple[ExtensionHeader, int]:
+) -> tuple[ExtensionHeader, int]:
     """
     Parse an extension definition from ``header`` at the given position.
 
@@ -344,7 +345,7 @@ def parse_extension_item(
     list of ``(name, value)`` pairs, and the new position.
 
     Raises:
-        InvalidHeaderFormat: on invalid inputs.
+        InvalidHeaderFormat: On invalid inputs.
 
     """
     # Extract extension name.
@@ -359,7 +360,7 @@ def parse_extension_item(
     return (cast(ExtensionName, name), parameters), pos
 
 
-def parse_extension(header: str) -> List[ExtensionHeader]:
+def parse_extension(header: str) -> list[ExtensionHeader]:
     """
     Parse a ``Sec-WebSocket-Extensions`` header.
 
@@ -379,7 +380,7 @@ def parse_extension(header: str) -> List[ExtensionHeader]:
     Parameter values are :obj:`None` when no value is provided.
 
     Raises:
-        InvalidHeaderFormat: on invalid inputs.
+        InvalidHeaderFormat: On invalid inputs.
 
     """
     return parse_list(parse_extension_item, header, 0, "Sec-WebSocket-Extensions")
@@ -389,7 +390,7 @@ parse_extension_list = parse_extension  # alias for backwards compatibility
 
 
 def build_extension_item(
-    name: ExtensionName, parameters: List[ExtensionParameter]
+    name: ExtensionName, parameters: Sequence[ExtensionParameter]
 ) -> str:
     """
     Build an extension definition.
@@ -424,28 +425,28 @@ build_extension_list = build_extension  # alias for backwards compatibility
 
 def parse_subprotocol_item(
     header: str, pos: int, header_name: str
-) -> Tuple[Subprotocol, int]:
+) -> tuple[Subprotocol, int]:
     """
     Parse a subprotocol from ``header`` at the given position.
 
     Return the subprotocol value and the new position.
 
     Raises:
-        InvalidHeaderFormat: on invalid inputs.
+        InvalidHeaderFormat: On invalid inputs.
 
     """
     item, pos = parse_token(header, pos, header_name)
     return cast(Subprotocol, item), pos
 
 
-def parse_subprotocol(header: str) -> List[Subprotocol]:
+def parse_subprotocol(header: str) -> list[Subprotocol]:
     """
     Parse a ``Sec-WebSocket-Protocol`` header.
 
     Return a list of WebSocket subprotocols.
 
     Raises:
-        InvalidHeaderFormat: on invalid inputs.
+        InvalidHeaderFormat: On invalid inputs.
 
     """
     return parse_list(parse_subprotocol_item, header, 0, "Sec-WebSocket-Protocol")
@@ -486,10 +487,10 @@ def build_www_authenticate_basic(realm: str) -> str:
     Build a ``WWW-Authenticate`` header for HTTP Basic Auth.
 
     Args:
-        realm: identifier of the protection space.
+        realm: Identifier of the protection space.
 
     """
-    # https://www.rfc-editor.org/rfc/rfc7617.html#section-2
+    # https://datatracker.ietf.org/doc/html/rfc7617#section-2
     realm = build_quoted_string(realm)
     charset = build_quoted_string("UTF-8")
     return f"Basic realm={realm}, charset={charset}"
@@ -498,21 +499,19 @@ def build_www_authenticate_basic(realm: str) -> str:
 _token68_re = re.compile(r"[A-Za-z0-9-._~+/]+=*")
 
 
-def parse_token68(header: str, pos: int, header_name: str) -> Tuple[str, int]:
+def parse_token68(header: str, pos: int, header_name: str) -> tuple[str, int]:
     """
     Parse a token68 from ``header`` at the given position.
 
     Return the token value and the new position.
 
     Raises:
-        InvalidHeaderFormat: on invalid inputs.
+        InvalidHeaderFormat: On invalid inputs.
 
     """
     match = _token68_re.match(header, pos)
     if match is None:
-        raise exceptions.InvalidHeaderFormat(
-            header_name, "expected token68", header, pos
-        )
+        raise InvalidHeaderFormat(header_name, "expected token68", header, pos)
     return match.group(), match.end()
 
 
@@ -522,33 +521,33 @@ def parse_end(header: str, pos: int, header_name: str) -> None:
 
     """
     if pos < len(header):
-        raise exceptions.InvalidHeaderFormat(header_name, "trailing data", header, pos)
+        raise InvalidHeaderFormat(header_name, "trailing data", header, pos)
 
 
-def parse_authorization_basic(header: str) -> Tuple[str, str]:
+def parse_authorization_basic(header: str) -> tuple[str, str]:
     """
     Parse an ``Authorization`` header for HTTP Basic Auth.
 
     Return a ``(username, password)`` tuple.
 
     Args:
-        header: value of the ``Authorization`` header.
+        header: Value of the ``Authorization`` header.
 
     Raises:
-        InvalidHeaderFormat: on invalid inputs.
-        InvalidHeaderValue: on unsupported inputs.
+        InvalidHeaderFormat: On invalid inputs.
+        InvalidHeaderValue: On unsupported inputs.
 
     """
-    # https://www.rfc-editor.org/rfc/rfc7235.html#section-2.1
-    # https://www.rfc-editor.org/rfc/rfc7617.html#section-2
+    # https://datatracker.ietf.org/doc/html/rfc7235#section-2.1
+    # https://datatracker.ietf.org/doc/html/rfc7617#section-2
     scheme, pos = parse_token(header, 0, "Authorization")
     if scheme.lower() != "basic":
-        raise exceptions.InvalidHeaderValue(
+        raise InvalidHeaderValue(
             "Authorization",
             f"unsupported scheme: {scheme}",
         )
     if peek_ahead(header, pos) != " ":
-        raise exceptions.InvalidHeaderFormat(
+        raise InvalidHeaderFormat(
             "Authorization", "expected space after scheme", header, pos
         )
     pos += 1
@@ -558,14 +557,14 @@ def parse_authorization_basic(header: str) -> Tuple[str, str]:
     try:
         user_pass = base64.b64decode(basic_credentials.encode()).decode()
     except binascii.Error:
-        raise exceptions.InvalidHeaderValue(
+        raise InvalidHeaderValue(
             "Authorization",
             "expected base64-encoded credentials",
         ) from None
     try:
         username, password = user_pass.split(":", 1)
     except ValueError:
-        raise exceptions.InvalidHeaderValue(
+        raise InvalidHeaderValue(
             "Authorization",
             "expected username:password credentials",
         ) from None
@@ -580,7 +579,7 @@ def build_authorization_basic(username: str, password: str) -> str:
     This is the reverse of :func:`parse_authorization_basic`.
 
     """
-    # https://www.rfc-editor.org/rfc/rfc7617.html#section-2
+    # https://datatracker.ietf.org/doc/html/rfc7617#section-2
     assert ":" not in username
     user_pass = f"{username}:{password}"
     basic_credentials = base64.b64encode(user_pass.encode()).decode()

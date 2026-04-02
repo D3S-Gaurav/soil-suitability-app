@@ -6,15 +6,14 @@ from pydantic import BaseModel
 import random
 import os
 from dotenv import load_dotenv
-import google.generativeai as genai
+from google import genai
 from fastapi import UploadFile, File, Form
 import pandas as pd
 import io
 
 load_dotenv()
 try:
-    genai.configure(api_key=os.environ.get("GOOGLE_API_KEY", ""))
-    model = genai.GenerativeModel('gemini-1.5-pro')
+    gemini_client = genai.Client(api_key=os.environ.get("GOOGLE_API_KEY", ""))
 except Exception as e:
     print(f"Gemini API Config Warning: {e}")
 
@@ -231,7 +230,10 @@ async def analyze_soil_webhook(
         {data_string}
         """
 
-        response = model.generate_content(prompt)
+        response = gemini_client.models.generate_content(
+            model='gemini-2.0-flash',
+            contents=prompt,
+        )
         
         return {
             "status": "success",
