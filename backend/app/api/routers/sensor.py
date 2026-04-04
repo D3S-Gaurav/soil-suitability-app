@@ -1,6 +1,31 @@
+import json
+import os
+from datetime import datetime, timezone
 from fastapi import APIRouter
 from pydantic import BaseModel
 from ...services.sensor_service import get_sensor_state, set_sensor_state, read_sensor_from_ip, read_sensor_data
+
+CONNECTION_LOG_PATH = os.path.join(os.path.dirname(__file__), '..', '..', 'db', 'connection_logs.json')
+
+def _append_connection_log(ip: str, payload: dict):
+    """Append a connection record to the permanent JSON log file."""
+    os.makedirs(os.path.dirname(CONNECTION_LOG_PATH), exist_ok=True)
+    entry = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "target_ip": ip,
+        "initial_sensor_payload": payload
+    }
+    try:
+        if os.path.exists(CONNECTION_LOG_PATH):
+            with open(CONNECTION_LOG_PATH, 'r') as f:
+                logs = json.load(f)
+        else:
+            logs = []
+        logs.append(entry)
+        with open(CONNECTION_LOG_PATH, 'w') as f:
+            json.dump(logs, f, indent=2)
+    except Exception as e:
+        print(f"Warning: Failed to write connection log: {e}")
 
 router = APIRouter(prefix="/sensor", tags=["sensor"])
 
@@ -23,6 +48,7 @@ def connect_to_sensor_ip(config: SensorConfig):
     
     data = read_sensor_from_ip(ip_to_test)
     if data:
+        _append_connection_log(ip_to_test, data)
         return {
             "status": "success", 
             "message": f"Successfully connected to sensor at {ip_to_test}",

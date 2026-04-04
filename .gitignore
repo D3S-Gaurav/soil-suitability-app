@@ -22,3 +22,10 @@ dist/
 
 # OS
 .DS_Store
+node_modules/
+.next/
+__pycache__/
+venv/
+.venv/
+*.sqlite
+.env
