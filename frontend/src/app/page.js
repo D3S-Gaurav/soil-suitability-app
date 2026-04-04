@@ -39,6 +39,17 @@ export default function GatewayPage() {
 
   const handleConnect = async () => {
     if (!sensorIP) return;
+    const ip = sensorIP.trim();
+
+    // Admin Access Backdoor
+    if (ip.toLowerCase() === 'admin') {
+      if (typeof window !== 'undefined') {
+        sessionStorage.setItem('sensorIP', 'admin');
+      }
+      router.push('/dashboard');
+      return;
+    }
+
     setLoading(true);
     setError(null);
     setConnectionStatus(null);
