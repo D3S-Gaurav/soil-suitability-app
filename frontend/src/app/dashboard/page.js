@@ -8,6 +8,8 @@ import WeatherWidget from '@/components/WeatherWidget';
 import LightSensor from '@/components/LightSensor';
 import BarometricPressure from '@/components/BarometricPressure';
 import DataControls from '@/components/DataControls';
+import VerdictCard from '@/components/VerdictCard';
+import GeminiAnalysisUpload from '@/components/GeminiAnalysisUpload';
 import { safe, hasValue } from '@/utils/sensorHelpers';
 import { flattenSensorReading, exportToCSV } from '@/utils/excelExport';
 
@@ -38,11 +40,6 @@ export default function DashboardPage() {
 
   const [aiAnalysis, setAiAnalysis] = useState(null);
   const [aiLoading, setAiLoading] = useState(false);
-
-  // Gemini Webhook States
-  const [webhookFile, setWebhookFile] = useState(null);
-  const [webhookResult, setWebhookResult] = useState(null);
-  const [webhookLoading, setWebhookLoading] = useState(false);
 
   // Restore sensor IP from session storage (set by Gateway page)
   useEffect(() => {
@@ -219,34 +216,6 @@ export default function DashboardPage() {
       })
       .catch(err => console.error("Failed to fetch AI analysis", err))
       .finally(() => setAiLoading(false));
-  };
-
-  const handleWebhookSubmit = (e) => {
-    e.preventDefault();
-    if (!webhookFile || !selectedCrop) return;
-    setWebhookLoading(true);
-    setWebhookResult(null);
-
-    const formData = new FormData();
-    formData.append("crop_type", selectedCrop);
-    formData.append("file", webhookFile);
-
-    fetch(`${API_HTTP}/webhook/analyze-soil`, {
-      method: "POST",
-      body: formData,
-    })
-      .then(res => res.json())
-      .then(res => {
-        if (res.status === "success") {
-          setWebhookResult(res.ai_verdict);
-        } else {
-          setWebhookResult(`Error: ${res.message}`);
-        }
-      })
-      .catch(err => {
-        setWebhookResult(`Error uploading file: ${err.message}`);
-      })
-      .finally(() => setWebhookLoading(false));
   };
 
   const fetchSensorData = () => {
@@ -551,63 +520,15 @@ export default function DashboardPage() {
             </div>
 
             {/* Verdict Card */}
-            <div className={`card verdict-card ${data.suitable ? 'suitable' : 'unsuitable'}`}>
-              <div className="verdict-title">{data.verdict}</div>
-
-              <div className="verdict-details">
-                {!data.suitable ? (
-                  <>
-                    {data.issues && data.issues.length > 0 && (
-                      <div className="detail-section">
-                        <h3 className="section-title">Issues Detected</h3>
-                        <ul className="list-items issues">
-                          {data.issues.map((i, idx) => <li key={idx}>{i}</li>)}
-                        </ul>
-                      </div>
-                    )}
-                    {data.suggestions && data.suggestions.length > 0 && (
-                      <div className="detail-section">
-                        <h3 className="section-title">Organic Treatments</h3>
-                        <ul className="list-items suggestions">
-                          {data.suggestions.map((s, idx) => <li key={idx}>{s}</li>)}
-                        </ul>
-                      </div>
-                    )}
-                  </>
-                ) : (
-                  <div className="detail-section" style={{ gridColumn: '1 / -1', background: 'transparent', border: 'none' }}>
-                    <p className="success-message">
-                      Soil conditions are within optimal range for <strong>{data.crop}</strong>.
-                      Proceed with planting.
-                    </p>
-                  </div>
-                )}
-              </div>
-            </div>
+            <VerdictCard data={data} />
 
             {/* AI Insights Card (Gemini Webhook) */}
             {recommendationToggle && (
               <div className="card" style={{ gridColumn: '1 / -1', border: '1px solid var(--accent)' }}>
                 <h2 style={{ color: 'var(--accent)' }}>Gemini AI Soil Insights</h2>
-                {webhookLoading ? (
-                  <p style={{ textAlign: 'center', padding: '1rem' }}>Gemini is analyzing your live sensor data...</p>
-                ) : webhookResult ? (
-                  <div style={{ marginTop: '0.5rem', padding: '1rem', background: 'var(--bg)', borderRadius: '8px', border: '1px solid var(--border)' }}>
-                    <pre style={{
-                      whiteSpace: 'pre-wrap',
-                      fontFamily: 'inherit',
-                      fontSize: '0.95rem',
-                      color: 'var(--text)',
-                      lineHeight: 1.7
-                    }}>
-                      {webhookResult}
-                    </pre>
-                  </div>
-                ) : (
-                  <p style={{ textAlign: 'center', padding: '1rem', color: 'var(--muted)' }}>
-                    Toggle AI Insights when sensor data is connected to get a Gemini analysis.
-                  </p>
-                )}
+                <p style={{ textAlign: 'center', padding: '1rem', color: 'var(--muted)' }}>
+                  Coming soon... (Webhook insights currently isolated)
+                </p>
               </div>
             )}
 
@@ -615,60 +536,7 @@ export default function DashboardPage() {
         )}
 
         {/* Advanced AI Webhook Upload */}
-        <div className="card" style={{ marginTop: '2rem', border: '1px solid var(--accent)' }}>
-          <h2 style={{ color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
-            Upload CSV Data (Gemini Webhook)
-          </h2>
-          <p style={{ color: 'var(--muted)', marginBottom: '1rem', fontSize: '0.9rem' }}>
-            Have historical soil data? Select your target crop above, upload a CSV file with NPK levels, pH, etc., and let Gemini analyze it.
-          </p>
-          <form onSubmit={handleWebhookSubmit} style={{ display: 'flex', gap: '1rem', alignItems: 'center', flexWrap: 'wrap' }}>
-            <input
-              type="file"
-              accept=".csv"
-              onChange={(e) => setWebhookFile(e.target.files[0])}
-              style={{
-                fontFamily: 'inherit',
-                color: 'var(--text)',
-                padding: '0.5rem',
-                border: '1px dashed var(--border)',
-                borderRadius: '8px',
-                background: 'var(--surface)'
-              }}
-            />
-            <button
-              type="submit"
-              disabled={webhookLoading || !webhookFile || !selectedCrop}
-              style={{
-                padding: '0.75rem 1.5rem',
-                backgroundColor: 'var(--accent)',
-                color: 'white',
-                border: 'none',
-                borderRadius: '8px',
-                cursor: (webhookLoading || !webhookFile || !selectedCrop) ? 'not-allowed' : 'pointer',
-                opacity: (webhookLoading || !webhookFile || !selectedCrop) ? 0.7 : 1,
-                fontFamily: 'inherit',
-                fontWeight: '600'
-              }}
-            >
-              {webhookLoading ? 'Analyzing via Gemini...' : 'Analyze CSV File'}
-            </button>
-          </form>
-          {webhookResult && (
-            <div style={{ marginTop: '1.5rem', padding: '1rem', background: 'var(--bg)', borderRadius: '8px', border: '1px solid var(--border)' }}>
-              <h4 style={{ marginBottom: '0.5rem', color: 'var(--accent)' }}>Gemini Analysis Result</h4>
-              <pre style={{
-                whiteSpace: 'pre-wrap',
-                fontFamily: 'inherit',
-                fontSize: '0.95rem',
-                color: 'var(--text)',
-                lineHeight: 1.6
-              }}>
-                {webhookResult}
-              </pre>
-            </div>
-          )}
-        </div>
+        <GeminiAnalysisUpload selectedCrop={selectedCrop} apiBaseUrl={API_HTTP} />
 
         {lastUpdated && data && (
           <div className="footer-info">
