@@ -17,6 +17,25 @@ except Exception as e:
 
 router = APIRouter(tags=["analyze"])
 
+@router.get("/api/gemini-health")
+def gemini_health():
+    """Lightweight check: is the Gemini API reachable and within quota?"""
+    if not gemini_client:
+        return {"status": "not_initialized", "message": "GenAI client not initialized. Check GOOGLE_API_KEY."}
+    try:
+        response = gemini_client.models.generate_content(
+            model='gemini-2.0-flash',
+            contents='Reply with only the word OK.',
+        )
+        if response and response.text:
+            return {"status": "available", "message": "Gemini API is operational."}
+        return {"status": "error", "message": "Gemini returned empty response."}
+    except Exception as e:
+        err_msg = str(e)
+        if "RESOURCE_EXHAUSTED" in err_msg or "429" in err_msg:
+            return {"status": "rate_limited", "message": "API quota exceeded. Will retry automatically."}
+        return {"status": "error", "message": err_msg}
+
 @router.post("/api/analyze")
 def analyze(sensor_data: dict):
     if not any(k in sensor_data for k in ["N", "nitrogen"]):
