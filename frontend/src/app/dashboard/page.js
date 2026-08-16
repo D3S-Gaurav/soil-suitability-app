@@ -254,8 +254,8 @@ export default function DashboardPage() {
     }
 
     const url = sensorIP
-      ? `${API_HTTP}/connect_sensor?ip=${encodeURIComponent(sensorIP)}`
-      : `${API_HTTP}/connect_sensor`;
+      ? `${API_HTTP}/sensor/manual_connect?ip=${encodeURIComponent(sensorIP)}`
+      : `${API_HTTP}/sensor/manual_connect`;
 
     fetch(url)
       .then(res => {
