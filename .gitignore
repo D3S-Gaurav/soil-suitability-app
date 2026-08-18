@@ -30,3 +30,21 @@ venv/
 *.sqlite
 .env
 .venv_sec/
+
+# Secrets — never commit real credentials.
+# Ignore every .env variant anywhere in the tree, but keep the committed template.
+.env
+.env.*
+**/.env
+**/.env.*
+!.env.example
+!**/.env.example
+
+# Test virtualenv (created by `uv venv`)
+.venv-test/
+**/.venv-test/
+
+# Pytest / coverage
+.pytest_cache/
+.coverage
+htmlcov/
