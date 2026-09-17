@@ -1,4 +1,4 @@
-# Soil Suitability Application V3.0
+# AgriPulse V3.0
 
 
 A hardware-to-UI system for monitoring soil NPK (Nitrogen, Phosphorous, Potassium) levels, pH, moisture, and ambient weather conditions.
