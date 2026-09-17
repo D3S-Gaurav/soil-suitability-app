@@ -1,5 +1,6 @@
 # Soil Suitability Application V3.0
 
+
 A hardware-to-UI system for monitoring soil NPK (Nitrogen, Phosphorous, Potassium) levels, pH, moisture, and ambient weather conditions.
 
 A Next.js frontend and FastAPI backend collect data from physical sensors (Wi-Fi or Serial), then cross-reference it against a crop dataset to flag soil deficiencies and suggest organic treatments.
